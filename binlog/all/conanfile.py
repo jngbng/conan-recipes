@@ -14,11 +14,23 @@ class BinlogRecipe(ConanFile):
     license = "Apache-2.0"
     url = "https://github.com/morganstanley/binlog"
     description = "A high performance C++ log library, producing structured binary logs"
-    topics = ("logger", "logging", "high performance")
+    topics = ("logger", "logging", "high performance", "header-only")
 
     settings = "os", "compiler", "build_type", "arch"
-    options = {"shared": [True, False], "fPIC": [True, False]}
-    default_options = {"shared": False, "fPIC": True}
+    options = {
+        "shared": [False],
+        "fPIC": [True, False],
+        "header_only": [True, False],
+        "build_bread": [True, False],
+        "build_brecovery": [True, False],
+    }
+    default_options = {
+        "shared": False,
+        "fPIC": True,
+        "header_only": False,
+        "build_bread": True,
+        "build_brecovery": True,
+    }
 
     @property
     def _min_cppstd(self):
@@ -34,14 +46,19 @@ class BinlogRecipe(ConanFile):
 
     def config_options(self):
         if self.settings.os == "Windows":
-            self.options.rm_safe("fPIC")
+            del self.options.fPIC
 
     def configure(self):
-        if self.options.shared:
-            self.options.rm_safe("fPIC")
+        if self.options.header_only:
+            self.options.rm_safe("build_bread")
+            self.options.rm_safe("build_brecovery")
 
     def layout(self):
         cmake_layout(self, src_folder="src")
+
+    def package_id(self):
+        if self.info.options.header_only:
+            self.info.clear()
 
     def validate(self):
         # validate the minimum cpp standard supported. For C++ projects only
@@ -62,40 +79,53 @@ class BinlogRecipe(ConanFile):
         get(self, **self.conan_data["sources"][self.version], strip_root=True)
 
     def generate(self):
+        if not self.options.header_only:
+            tc = CMakeToolchain(self)
+            tc.variables["BINLOG_BUILD_EXAMPLES"] = False
+            tc.variables["BINLOG_BUILD_UNIT_TESTS"] = False
+            tc.variables["BINLOG_BUILD_INTEGRATION_TESTS"] = False
+            tc.variables["BINLOG_BUILD_BREAD"] = self.options.build_bread
+            tc.variables["BINLOG_BUILD_BRECOVERY"] = self.options.build_brecovery
+            tc.generate()
+        # No dependencies
         # deps = CMakeDeps(self)
         # deps.generate()
-        tc = CMakeToolchain(self)
-        tc.generate()
 
     def build(self):
-        cmake = CMake(self)
-        cmake.configure()
-        cmake.build()
+        if not self.options.header_only:
+            cmake = CMake(self)
+            cmake.configure()
+            cmake.build()
 
     def package(self):
         copy(self, pattern="LICENSE", dst=os.path.join(self.package_folder, "licenses"), src=self.source_folder)
-        cmake = CMake(self)
-        cmake.install()
-        # some files extensions and folders are not allowed. Please, read the FAQs to get informed.
-        rmdir(self, os.path.join(self.package_folder, "lib", "cmake"))
-        # rmdir(self, os.path.join(self.package_folder, "share"))
-        # rm(self, "*.la", os.path.join(self.package_folder, "lib"))
-        # rm(self, "*.pdb", os.path.join(self.package_folder, "lib"))
-        # rm(self, "*.pdb", os.path.join(self.package_folder, "bin"))
+        if self.options.header_only:
+            copy(self,
+                 src=os.path.join(self.source_folder, "include"),
+                 pattern="*.hpp", dst=os.path.join(self.package_folder, "include"))
+        else:
+            cmake = CMake(self)
+            cmake.install()
+            # some files extensions and folders are not allowed. Please, read the FAQs to get informed.
+            rmdir(self, os.path.join(self.package_folder, "lib", "cmake"))
+            # rmdir(self, os.path.join(self.package_folder, "share"))
+            # rm(self, "*.la", os.path.join(self.package_folder, "lib"))
+            # rm(self, "*.pdb", os.path.join(self.package_folder, "lib"))
+            # rm(self, "*.pdb", os.path.join(self.package_folder, "bin"))
 
     def package_info(self):
-        self.cpp_info.libs = ["binlog"]
+        if self.options.header_only:
+            self.cpp_info.libs = []
+            self.cpp_info.libdirs = []
+            self.cpp_info.bindirs = []
+            self.cpp_info.set_property("cmake_target_name", "binlog::binlog_header_only")
+        else:
+            self.cpp_info.libs = ["binlog"]
 
         self.cpp_info.set_property("cmake_file_name", "binlog")
-        self.cpp_info.set_property("cmake_target_name", "binlog::binlog")
 
-        # TODO: to remove in conan v2 once cmake_find_package_* generators removed
-        self.cpp_info.filenames["cmake_find_package"] = "BINLOG"
-        self.cpp_info.filenames["cmake_find_package_multi"] = "binlog"
-        self.cpp_info.names["cmake_find_package"] = "BINLOG"
-        self.cpp_info.names["cmake_find_package_multi"] = "binlog"
-
-    
-
-    
-
+        # # TODO: to remove in conan v2 once cmake_find_package_* generators removed
+        # self.cpp_info.filenames["cmake_find_package"] = "BINLOG"
+        # self.cpp_info.filenames["cmake_find_package_multi"] = "binlog"
+        # self.cpp_info.names["cmake_find_package"] = "BINLOG"
+        # self.cpp_info.names["cmake_find_package_multi"] = "binlog"
