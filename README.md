@@ -2,5 +2,6 @@
 
 
 ```
-$ conan create binlog/all/ --version 20230522_a6ef52
+$ conan create binlog/all/ --version 20230621_4cd8f78
+$ conan install binlog/all/ --version 20230621_4cd8f78
 ```
